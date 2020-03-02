@@ -4,6 +4,54 @@
 #include <cmath>
 
 
+template<unsigned M, unsigned N, unsigned B, unsigned A>
+struct SinCosSeries {
+   static double value() {
+      return 1-(A*M_PI/B)*(A*M_PI/B)/M/(M+1)
+               *SinCosSeries<M+2,N,B,A>::value();
+   }
+};
+ 
+template<unsigned N, unsigned B, unsigned A>
+struct SinCosSeries<N,N,B,A> {
+   static double value() { return 1.; }
+};
+ 
+template<unsigned B, unsigned A, typename T=double>
+struct Sin;
+ 
+template<unsigned B, unsigned A>
+struct Sin<B,A,float> {
+   static float value() {
+      return (A*M_PI/B)*SinCosSeries<2,24,B,A>::value();
+   }
+};
+template<unsigned B, unsigned A>
+struct Sin<B,A,double> {
+   static double value() {
+      return (A*M_PI/B)*SinCosSeries<2,34,B,A>::value();
+   }
+};
+ 
+template<unsigned B, unsigned A, typename T=double>
+struct Cos;
+ 
+template<unsigned B, unsigned A>
+struct Cos<B,A,float> {
+   static float value() {
+      return SinCosSeries<1,23,B,A>::value();
+   }
+};
+template<unsigned B, unsigned A>
+struct Cos<B,A,double> {
+   static double value() {
+      return SinCosSeries<1,33,B,A>::value();
+   }
+};
+
+
+
+
 template<unsigned N, typename T=double> class DanielsonLanczos {
 public:
   static inline void constexpr apply(T* data) {
@@ -11,9 +59,9 @@ public:
     DanielsonLanczos<N/2,T>::apply(data+N);
  
     T wtemp,tempr,tempi,wr,wi,wpr,wpi;
-    wtemp = sin(M_PI/N);
+    wtemp = Sin<N,1,T>::value(); // sin(M_PI/N);
     wpr = -2.0*wtemp*wtemp;
-    wpi = -sin(2*M_PI/N);
+    wpi = -Sin<N,2,T>::value(); // -sin(2*M_PI/N);
     wr = 1.0;
     wi = 0.0;
     for (unsigned i=0; i<N; i+=2) {
@@ -37,7 +85,7 @@ public:
 
 
 
-template <class T> void swap(T &a, T &b) {
+template <class T> inline constexpr void swap(T &a, T &b) {
   T tmp = a;
   a = b;
   b = tmp;
@@ -45,15 +93,15 @@ template <class T> void swap(T &a, T &b) {
 
 
 
-template <class T> void scramble(T *data , int N ) {
-  int n = N<<1;
-  int j=1;
-  for (int i=1; i<n; i+=2) {
+template <class T> void scramble(T *data , unsigned N ) {
+  unsigned n = N<<1;
+  unsigned j=1;
+  for (unsigned i=1; i<n; i+=2) {
     if (j>i) {
       swap(data[j-1], data[i-1]);
       swap(data[j  ], data[i  ]);
     }
-    int m = N;
+    unsigned m = N;
     while (m>=2 && j>m) {
       j -= m;
       m >>= 1;
@@ -64,7 +112,7 @@ template <class T> void scramble(T *data , int N ) {
 
 
 
-template <int I, int N, class T> class ProcessRealFFT {
+template <unsigned I, unsigned N, class T> class ProcessRealFFT {
 public:
   static inline void constexpr process(T *data, T *tmp) {
     T xrp = (tmp[2*I  ] + tmp[2*(N-I)  ])*0.5;
@@ -76,10 +124,10 @@ public:
     ProcessRealFFT<I-1,N,T>::process(data,tmp);
   }
 };
-template <int N, class T> class ProcessRealFFT<1,N,T> {
+template <unsigned N, class T> class ProcessRealFFT<1,N,T> {
 public:
   static inline void constexpr process(T *data, T *tmp) {
-    int constexpr I = 1;
+    unsigned constexpr I = 1;
     T xrp = (tmp[2*I  ] + tmp[2*(N-I)  ])*0.5;
     T xrm = (tmp[2*I  ] - tmp[2*(N-I)  ])*0.5;
     T xip = (tmp[2*I+1] + tmp[2*(N-I)+1])*0.5;
@@ -91,7 +139,7 @@ public:
 
 
 
-template <int I, int N, class T> class ProcessRealInverseFFT {
+template <unsigned I, unsigned N, class T> class ProcessRealInverseFFT {
 public:
   static inline void constexpr process(T *data, T *tmp) {
     T xrp = (data[2*I  ] + data[2*(N-I)  ]);
@@ -103,10 +151,10 @@ public:
     ProcessRealInverseFFT<I-1,N,T>::process(data,tmp);
   }
 };
-template <int N, class T> class ProcessRealInverseFFT<0,N,T> {
+template <unsigned N, class T> class ProcessRealInverseFFT<0,N,T> {
 public:
   static inline void constexpr process(T *data, T *tmp) {
-    int constexpr I = 0;
+    unsigned constexpr I = 0;
     T xrp = (data[2*I  ] + data[2*(N-I)  ]);
     T xrm = (data[2*I  ] - data[2*(N-I)  ]);
     T xip = (data[2*I+1] + data[2*(N-I)+1]);
@@ -134,6 +182,7 @@ constexpr unsigned nextPowerOfTwo(unsigned n) {
 
 template<unsigned SIZE, typename T=double> class GFFT {
   static unsigned constexpr N = nextPowerOfTwo(SIZE)/2;
+  static_assert(SIZE-N*2 == 0,"ERROR: Running GFFT with a non-power-of-two-size");
 public:
   void forward(T* data) {
     scramble(data,N);
@@ -141,14 +190,14 @@ public:
   }
   void inverse(T* data) {
     // Multiply complex components by -1
-    for (int i=0; i<2*N; i+=2) { data[i+1] = -data[i+1]; }
+    for (unsigned i=0; i<2*N; i+=2) { data[i+1] = -data[i+1]; }
     forward(data);
     // Multiply complex components by -1
-    for (int i=0; i<2*N; i+=2) { data[i+1] = -data[i+1]; }
+    for (unsigned i=0; i<2*N; i+=2) { data[i+1] = -data[i+1]; }
   }
   void forwardReal(T *data, T *tmp) {
     // Copy to temporary buffer
-    for (int i=0; i<2*N; i++) {
+    for (unsigned i=0; i<2*N; i++) {
       tmp[i] = data[i];
     }
     // Compute FFT assuming complex #s are even,I*odd; even,I*odd
@@ -164,7 +213,7 @@ public:
     // Transform FFTs into something whose inverse reproduces the original real signal
     ProcessRealInverseFFT<N-1,N,T>::process(data,tmp);
     inverse(tmp);
-    for (int i=0; i<2*N; i++) {
+    for (unsigned i=0; i<2*N; i++) {
       data[i] = tmp[i];
     }
   }
@@ -173,16 +222,16 @@ public:
 
 
 int main() {
-  int constexpr N = 8;
+  unsigned constexpr N = 8;
   GFFT<N> gfft;
   double data[N+2];
   double tmp [N];
 
 
-  for (int i=0; i<N; i++) {
+  for (unsigned i=0; i<N; i++) {
     data[i] = pow(i+14.2,2);
   }
-  for (int i=0; i<N; i++) {
+  for (unsigned i=0; i<N; i++) {
     std::cout << std::setprecision(15) << data[i]<< "\n";
   }
   std::cout << std::endl;
@@ -191,7 +240,7 @@ int main() {
 
   // Forward FFT
   gfft.forwardReal(data,tmp);
-  for (int i=0; i<N+2; i+=2) {
+  for (unsigned i=0; i<N+2; i+=2) {
     std::cout << data[i] << " + " << data[i+1] << "i\n";
   }
   std::cout << std::endl;
@@ -199,13 +248,11 @@ int main() {
 
 
   gfft.inverseReal(data,tmp);
-  for (int i=0; i<N; i++) {
+  for (unsigned i=0; i<N; i++) {
     std::cout << std::setprecision(15) << data[i] << "\n";
   }
   std::cout << std::endl;
   std::cout << std::endl;
-
-
 }
 
 
