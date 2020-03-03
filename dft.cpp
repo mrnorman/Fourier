@@ -6,17 +6,12 @@
 
 template <unsigned N, class T=double> class DFT {
 public:
-  T cos_table[N][N];
-  T sin_table[N][N];
+  T sin_table[N*N];
 
 
   constexpr DFT() {
-    // InitTables<N-1,N-1,N,T>::init(cos_table,sin_table);
-    for (unsigned j=0; j<N; j++) {
-      for (unsigned i=0; i<N; i++) {
-        cos_table[i][j] = cos(2*M_PI*i*j/N);
-        sin_table[i][j] = sin(2*M_PI*i*j/N);
-      }
+    for (unsigned i=0; i<N*N; i++) {
+      sin_table[i] = sin(2*M_PI*i/N);
     }
   }
 
@@ -25,11 +20,16 @@ public:
     fft[l] = 0;
     // The i-loop is sequential
     for (unsigned i=0; i<N; i++) {
+      int sgn = -1;
+      unsigned ind = i*(l/2);  // Defaults to sin(2*pi*i*(l/2)/N)
+      // Only do integer arithmetic in the branched section
       if (l - ( (l >> 1) << 1 ) == 0) { // This is a cheap l%2 operator
-        fft[l] +=  data[i]*cos_table[i][l/2];
-      } else {
-        fft[l] += -data[i]*sin_table[i][l/2];
+        // if l is even, compute cos(2*pi*i*(l/2)/N) by shifting by pi/2
+        ind = i*(l/2) + N/4;
+        if (ind >= N*N) { ind -= N; }
+        sgn = 1;
       }
+      fft[l] += sgn*data[i]*sin_table[ind];
     }
     fft[l] /= N;
   }
@@ -39,13 +39,18 @@ public:
     data[l] = 0;
     // The i-loop is sequential
     for (unsigned i=0; i<N; i++) {
+      T mysin = sin_table[i*l];
+      unsigned ind = i*l + N/4;
+      if (ind >= N*N) { ind -= N; }
+      T mycos = sin_table[ind];
+      // Only do integer arithmetic in the branched section
       if (i <= N/2) {
-        data[l] += fft[2*i  ]*cos_table[i][l] -
-                   fft[2*i+1]*sin_table[i][l];
+        ind = 2*i;
+        mysin *= -1;
       } else {
-        data[l] += fft[2*(N-1-i+1)  ]*cos_table[i][l] +
-                   fft[2*(N-1-i+1)+1]*sin_table[i][l];
+        ind = 2*(N-i);
       }
+      data[l] += fft[ind]*mycos + fft[ind+1]*mysin;
     }
   }
 
