@@ -73,49 +73,71 @@ public:
 
 
 
-unsigned constexpr N = 8;
 
 int main() {
-  double data[N  ];
-  double fft [N+2];
+  {
+    unsigned constexpr N = 8;
+    double data[N  ];
+    double fft [N+2];
 
-  DFT<N> dft;
+    DFT<N> dft;
 
 
-  for (unsigned i=0; i<N; i++) {
-    data[i] = pow(i+14.2,2);
+    for (unsigned i=0; i<N; i++) {
+      data[i] = pow(i+14.2,2);
+    }
+    for (unsigned i=0; i<N; i++) {
+      std::cout << std::setprecision(15) << data[i]<< "\n";
+    }
+    std::cout << std::endl;
+    std::cout << std::endl;
+
+
+    // The l-loop is parallel
+      for (unsigned l=0; l<N+2; l++) {
+        dft.forward_one(data,fft,l);
+      }
+
+
+    for (unsigned i=0; i<N+2; i+=2) {
+      std::cout << std::fixed << std::setprecision(15) << fft[i] << " + " << fft[i+1] << "i\n";
+    }
+    std::cout << std::endl;
+    std::cout << std::endl;
+
+
+    // The l-loop is parallel
+      for (unsigned l=0; l<N; l++) {
+        dft.inverse_one(data,fft,l);
+      }
+
+
+    for (unsigned i=0; i<N; i++) {
+      std::cout << std::setprecision(15) << data[i]<< "\n";
+    }
+    std::cout << std::endl;
+    std::cout << std::endl;
   }
-  for (unsigned i=0; i<N; i++) {
-    std::cout << std::setprecision(15) << data[i]<< "\n";
-  }
-  std::cout << std::endl;
-  std::cout << std::endl;
 
 
-  // The l-loop is parallel
-    for (unsigned l=0; l<N+2; l++) {
-      dft.forward_one(data,fft,l);
+  {
+    unsigned constexpr N = 64;
+    unsigned constexpr ITER = 100000;
+    DFT<N> dft;
+    double data[N  ];
+    double ffts[N+2];
+
+    auto t1 = std::clock();
+
+    for (unsigned i=0; i<ITER; i++) {
+      dft.forward(data,ffts);
+      dft.inverse(data,ffts);
     }
 
-
-  for (unsigned i=0; i<N+2; i+=2) {
-    std::cout << std::fixed << std::setprecision(15) << fft[i] << " + " << fft[i+1] << "i\n";
+    auto tm = std::clock() - t1;
+    std::cout << "Cycles: " << tm << "\n";
+    std::cout << data[0] << "\n";
   }
-  std::cout << std::endl;
-  std::cout << std::endl;
-
-
-  // The l-loop is parallel
-    for (unsigned l=0; l<N; l++) {
-      dft.inverse_one(data,fft,l);
-    }
-
-
-  for (unsigned i=0; i<N; i++) {
-    std::cout << std::setprecision(15) << data[i]<< "\n";
-  }
-  std::cout << std::endl;
-  std::cout << std::endl;
 }
 
 

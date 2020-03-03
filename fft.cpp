@@ -233,37 +233,58 @@ public:
 
 
 int main() {
-  unsigned constexpr N = 8;
-  FFT<N> fft;
-  double data[N+2];
-  double tmp[N];
+  {
+    unsigned constexpr N = 8;
+    FFT<N> fft;
+    double data[N+2];
+    double tmp[N];
 
 
-  for (unsigned i=0; i<N; i++) {
-    data[i] = pow(i+14.2,2);
+    for (unsigned i=0; i<N; i++) {
+      data[i] = pow(i+14.2,2);
+    }
+    for (unsigned i=0; i<N; i++) {
+      std::cout << std::setprecision(15) << data[i]<< "\n";
+    }
+    std::cout << std::endl;
+    std::cout << std::endl;
+
+
+    // Forward FFT
+    fft.forward(data,tmp);
+    for (unsigned i=0; i<N+2; i+=2) {
+      std::cout << data[i] << " + " << data[i+1] << "i\n";
+    }
+    std::cout << std::endl;
+    std::cout << std::endl;
+
+
+    fft.inverse(data,tmp);
+    for (unsigned i=0; i<N; i++) {
+      std::cout << std::setprecision(15) << data[i] << "\n";
+    }
+    std::cout << std::endl;
+    std::cout << std::endl;
   }
-  for (unsigned i=0; i<N; i++) {
-    std::cout << std::setprecision(15) << data[i]<< "\n";
+
+  {
+    unsigned constexpr N = 64;
+    unsigned constexpr ITER = 100000;
+    FFT<N> fft;
+    double data[N+2];
+    double tmp[N];
+
+    auto t1 = std::clock();
+
+    for (unsigned i=0; i<ITER; i++) {
+      fft.forward(data,tmp);
+      fft.inverse(data,tmp);
+    }
+
+    auto tm = std::clock() - t1;
+    std::cout << "Cycles: " << tm << "\n";
+    std::cout << data[0] << "\n";
   }
-  std::cout << std::endl;
-  std::cout << std::endl;
-
-
-  // Forward FFT
-  fft.forward(data,tmp);
-  for (unsigned i=0; i<N+2; i+=2) {
-    std::cout << data[i] << " + " << data[i+1] << "i\n";
-  }
-  std::cout << std::endl;
-  std::cout << std::endl;
-
-
-  fft.inverse(data,tmp);
-  for (unsigned i=0; i<N; i++) {
-    std::cout << std::setprecision(15) << data[i] << "\n";
-  }
-  std::cout << std::endl;
-  std::cout << std::endl;
 }
 
 
