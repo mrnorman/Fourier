@@ -269,10 +269,13 @@ int main() {
 
   {
     unsigned constexpr N = 64;
-    unsigned constexpr ITER = 100000;
+    unsigned constexpr ITER = 1000000;
     FFT<N> fft;
     double data[N+2];
     double tmp[N];
+    for (unsigned i=0; i<N; i++) {
+      data[i] = pow(i+14.2,2);
+    }
 
     auto t1 = std::clock();
 
@@ -281,7 +284,7 @@ int main() {
       fft.inverse(data,tmp);
     }
 
-    auto tm = std::clock() - t1;
+    auto tm = ( std::clock() - t1 ) / (double) CLOCKS_PER_SEC;
     std::cout << "Cycles: " << tm << "\n";
     std::cout << data[0] << "\n";
   }
