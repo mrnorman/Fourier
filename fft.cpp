@@ -4,64 +4,21 @@
 #include <cmath>
 
 
-template<unsigned M, unsigned N, unsigned B, unsigned A>
-struct SinCosSeries {
-   static double value() {
-      return 1-(A*M_PI/B)*(A*M_PI/B)/M/(M+1)
-               *SinCosSeries<M+2,N,B,A>::value();
-   }
-};
- 
-template<unsigned N, unsigned B, unsigned A>
-struct SinCosSeries<N,N,B,A> {
-   static double value() { return 1.; }
-};
- 
-template<unsigned B, unsigned A, typename T=double>
-struct Sin;
- 
-template<unsigned B, unsigned A>
-struct Sin<B,A,float> {
-   static float value() {
-      return (A*M_PI/B)*SinCosSeries<2,24,B,A>::value();
-   }
-};
-template<unsigned B, unsigned A>
-struct Sin<B,A,double> {
-   static double value() {
-      return (A*M_PI/B)*SinCosSeries<2,34,B,A>::value();
-   }
-};
- 
-template<unsigned B, unsigned A, typename T=double>
-struct Cos;
- 
-template<unsigned B, unsigned A>
-struct Cos<B,A,float> {
-   static float value() {
-      return SinCosSeries<1,23,B,A>::value();
-   }
-};
-template<unsigned B, unsigned A>
-struct Cos<B,A,double> {
-   static double value() {
-      return SinCosSeries<1,33,B,A>::value();
-   }
-};
 
-
-
-
+// Lower-level routine for FFTs
 template<unsigned N, typename T=double> class DanielsonLanczos {
 public:
   static inline void constexpr apply(T* data) {
     DanielsonLanczos<N/2,T>::apply(data  );
     DanielsonLanczos<N/2,T>::apply(data+N);
  
+    // The compiler should have enough information to compute the sine
+    // and cosine at compile time. Use "nm objectfile.o | grep -i cos"
+    // to check is sin or cos are linked in
     T wtemp,tempr,tempi,wr,wi,wpr,wpi;
-    wtemp = Sin<N,1,T>::value(); // sin(M_PI/N);
+    wtemp = sin(M_PI/N);
     wpr = -2.0*wtemp*wtemp;
-    wpi = -Sin<N,2,T>::value(); // -sin(2*M_PI/N);
+    wpi = -sin(2*M_PI/N);
     wr = 1.0;
     wi = 0.0;
     for (unsigned i=0; i<N; i+=2) {
@@ -84,7 +41,6 @@ public:
 };
 
 
-
 template <class T> inline constexpr void swap(T &a, T &b) {
   T tmp = a;
   a = b;
@@ -92,7 +48,7 @@ template <class T> inline constexpr void swap(T &a, T &b) {
 }
 
 
-
+// Pre-processing for complex FFTs
 template <class T> void scramble(T *data , unsigned N ) {
   unsigned n = N<<1;
   unsigned j=1;
@@ -111,7 +67,7 @@ template <class T> void scramble(T *data , unsigned N ) {
 }
 
 
-
+// Process complex FFT output to compute the FFTs of real data
 template <unsigned I, unsigned N, class T> class ProcessRealFFT {
 public:
   static inline void constexpr process(T *data, T *tmp) {
@@ -138,7 +94,7 @@ public:
 };
 
 
-
+// Pre-process real FFTs for inverting to real data
 template <unsigned I, unsigned N, class T> class ProcessRealInverseFFT {
 public:
   static inline void constexpr process(T *data, T *tmp) {
@@ -165,8 +121,7 @@ public:
 };
 
 
-
-// Calculated at compile time
+// Calculate the next power of two for a given unsigned integer
 constexpr unsigned nextPowerOfTwo(unsigned n) {
   unsigned count = 0;  
   // If n is zero or n is a power of 2, then return it
@@ -179,11 +134,48 @@ constexpr unsigned nextPowerOfTwo(unsigned n) {
 }
 
 
-
-template<unsigned SIZE, typename T=double> class GFFT {
+///////////////////////////////////////////////////////////////////////////////////////
+// Class to compute Fast Fourier Transforms on real data with a length that matches a
+// power of two (e.g., 4, 16, 32, 64, ...). All temporary storage is created on the
+// stack internally in the class, as this is meant for relatively small FFTs (you be
+// the judge of what "small" means) computed in very large batches.
+//
+// forwardReal(T *data):
+//       data: 1-D array of type T with SIZE+2 elements allocated. It is expected to
+//             contain SIZE real values on input; and it will contain SIZE/2+1 complex
+//             Fourier modes with complex numbers represented as:
+//             [real,imag , real,imag , ...]
+//
+//       Computes a forward transform of SIZE real values and stores it into SIZE/2+1
+//       complex Fourier modes. The transform is performed in place. The 0th and
+//       (SIZE/2)th modes have no imaginary component (i.e., data[1] and
+//       data[2*SIZE+1] are both zero)
+//
+//       Consider this the equivalent of:
+//       fft[k] = sum( data[m]*exp(-I*2*pi*k*m/SIZE) , m=0..SIZE-1 ) / SIZE
+//
+//       Note the scaling by SIZE in the forward transform rather than in the inverse
+//       transform. Also, only SIZE/2 transforms need to be computed because the rest
+//       can be computed by symmetry since this is using an entirely real signal
+//
+// inverseReal(T *data):
+//       data: 1-D array of type T with SIZE+2 elements allocated. It is expected to
+//             contain SIZE/2+1 complex Fourier modes consuming all SIZE+2 indices on
+//             input; and it will contain SIZE real values on output
+//
+//       Computes an inverse transform of SIZE/2+1 complex Fourier modes into SIZE
+//       real values. The transform is performed in place. 
+//
+//       Consider this the equivalent of:
+//       data[k] = sum( fft[n]*exp(I*2*pi*k*m/SIZE) , m=0..SIZE-1 )
+//
+//       Note that the scaling is done in the forward transform so it isn't needed in
+//       the inverse. 
+///////////////////////////////////////////////////////////////////////////////////////
+template<unsigned SIZE, typename T=double> class FFT {
   static unsigned constexpr N = nextPowerOfTwo(SIZE)/2;
-  static_assert(SIZE-N*2 == 0,"ERROR: Running GFFT with a non-power-of-two-size");
-public:
+  static_assert(SIZE-nextPowerOfTwo(SIZE) == 0,"ERROR: Running GFFT with a non-power-of-two-size");
+  T tmp[2*N];
   void forward(T* data) {
     scramble(data,N);
     DanielsonLanczos<N,T>::apply(data);
@@ -195,7 +187,8 @@ public:
     // Multiply complex components by -1
     for (unsigned i=0; i<2*N; i+=2) { data[i+1] = -data[i+1]; }
   }
-  void forwardReal(T *data, T *tmp) {
+public:
+  void forwardReal(T *data) {
     // Copy to temporary buffer
     for (unsigned i=0; i<2*N; i++) {
       tmp[i] = data[i];
@@ -209,7 +202,7 @@ public:
     // Transform the FFT into the true FFT for the real sequence
     ProcessRealFFT<N-1,N,T>::process(data,tmp);
   }
-  void inverseReal(T* data, T *tmp) {
+  void inverseReal(T* data) {
     // Transform FFTs into something whose inverse reproduces the original real signal
     ProcessRealInverseFFT<N-1,N,T>::process(data,tmp);
     inverse(tmp);
@@ -223,9 +216,8 @@ public:
 
 int main() {
   unsigned constexpr N = 8;
-  GFFT<N> gfft;
+  FFT<N> fft;
   double data[N+2];
-  double tmp [N];
 
 
   for (unsigned i=0; i<N; i++) {
@@ -239,7 +231,7 @@ int main() {
 
 
   // Forward FFT
-  gfft.forwardReal(data,tmp);
+  fft.forwardReal(data);
   for (unsigned i=0; i<N+2; i+=2) {
     std::cout << data[i] << " + " << data[i+1] << "i\n";
   }
@@ -247,7 +239,7 @@ int main() {
   std::cout << std::endl;
 
 
-  gfft.inverseReal(data,tmp);
+  fft.inverseReal(data);
   for (unsigned i=0; i<N; i++) {
     std::cout << std::setprecision(15) << data[i] << "\n";
   }
